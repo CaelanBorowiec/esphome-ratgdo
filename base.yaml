@@ -14,6 +14,19 @@ external_components:
 
 safe_mode:
 
+# Delay before dry contact script can run (avoids uncommanded open from GPIO noise at boot)
+globals:
+  - id: ${id_prefix}_dry_contact_ready
+    type: bool
+    restore_value: false
+    initial_value: "false"
+
+on_boot:
+  - delay: 10s
+  - globals.set:
+      id: ${id_prefix}_dry_contact_ready
+      value: "true"
+
 preferences:
   flash_write_interval: 1min
 
@@ -168,30 +181,35 @@ binary_sensor:
       - light.toggle: ${id_prefix}_light
 
 script:
+  # Only run door actions after boot delay to avoid uncommanded open from GPIO noise
   - id: "${id_prefix}_dry_contact_door_control"
     then:
-      - delay: 0.1s
       - if:
           condition:
-            and:
-              - binary_sensor.is_on: ${id_prefix}_dry_contact_close
-              - binary_sensor.is_on: ${id_prefix}_dry_contact_open
+            lambda: "return id(${id_prefix}_dry_contact_ready);"
           then:
-            - cover.toggle: ${id_prefix}_garage_door
-      - if:
-          condition:
-            and:
-              - binary_sensor.is_off: ${id_prefix}_dry_contact_close
-              - binary_sensor.is_on: ${id_prefix}_dry_contact_open
-          then:
-            - cover.open: ${id_prefix}_garage_door
-      - if:
-          condition:
-            and:
-              - binary_sensor.is_on: ${id_prefix}_dry_contact_close
-              - binary_sensor.is_off: ${id_prefix}_dry_contact_open
-          then:
-            - cover.close: ${id_prefix}_garage_door
+            - delay: 0.1s
+            - if:
+                condition:
+                  and:
+                    - binary_sensor.is_on: ${id_prefix}_dry_contact_close
+                    - binary_sensor.is_on: ${id_prefix}_dry_contact_open
+                then:
+                  - cover.toggle: ${id_prefix}_garage_door
+            - if:
+                condition:
+                  and:
+                    - binary_sensor.is_off: ${id_prefix}_dry_contact_close
+                    - binary_sensor.is_on: ${id_prefix}_dry_contact_open
+                then:
+                  - cover.open: ${id_prefix}_garage_door
+            - if:
+                condition:
+                  and:
+                    - binary_sensor.is_on: ${id_prefix}_dry_contact_close
+                    - binary_sensor.is_off: ${id_prefix}_dry_contact_open
+                then:
+                  - cover.close: ${id_prefix}_garage_door
 
 number:
   - platform: ratgdo

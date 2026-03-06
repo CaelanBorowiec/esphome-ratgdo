@@ -705,6 +705,11 @@ namespace ratgdo {
             return;
         }
 
+        if (*this->door_position == DOOR_POSITION_UNKNOWN) {
+            ESP_LOGW(TAG, "Door position unknown, ignoring move to position %.2f (query door state first)", position);
+            return;
+        }
+
         auto delta = position - *this->door_position;
         if (delta == 0) {
             ESP_LOGD(TAG, "Door is already at position %.2f", position);
