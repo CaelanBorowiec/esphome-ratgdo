@@ -36,6 +36,8 @@ namespace ratgdo {
 
     static const char* const TAG = "ratgdo";
     static const int SYNC_DELAY = 1000;
+    // Run after Sec+1 (45s) and Sec+2 (30s) sync timeouts; if door state still unknown, mark sync failed
+    static const int SYNC_VERIFY_DELAY = 50000;
 
     // Interval IDs using uint32_t to avoid heap allocations
     static constexpr uint32_t INTERVAL_POSITION_SYNC = 0;
@@ -136,6 +138,13 @@ namespace ratgdo {
 
         // many things happening at startup, use some delay for sync
         set_timeout(SYNC_DELAY, [this] { this->sync(); });
+        // verify sync produced a door state; if not, mark failed (backstop for all protocols including dry contact)
+        set_timeout("sync_verify", SYNC_DELAY + SYNC_VERIFY_DELAY, [this] {
+            if (*this->door_state == DoorState::UNKNOWN) {
+                ESP_LOGW(TAG, "Sync did not get door state; triggering sync failed.");
+                this->sync_failed = true;
+            }
+        });
         ESP_LOGD(TAG, " _____ _____ _____ _____ ____  _____ ");
         ESP_LOGD(TAG, "| __  |  _  |_   _|   __|    \\|     |");
         ESP_LOGD(TAG, "|    -|     | | | |  |  |  |  |  |  |");

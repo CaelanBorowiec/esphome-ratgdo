@@ -90,12 +90,33 @@ if (*this->door_position == DOOR_POSITION_UNKNOWN) {
 
 ---
 
+## Sync verification after boot
+
+**Context:** After boot we run `sync()` once (after `SYNC_DELAY`). Sync can fail (e.g. opener offline, wiring, or dry contact sensors not yet stable), leaving door state and position **unknown**. If that goes undetected, the user might not know to use the Sync button and move-to-position would remain rejected until they do.
+
+**Existing behavior (before this change):**
+
+- **Security+ 1.0:** `sync()` starts a 45 s window; if no door state is received, the protocol sets `sync_failed = true` and the `on_sync_failed` automation runs (e.g. HA persistent notification).
+- **Security+ 2.0:** `sync_helper()` retries for up to 30 s; if still not synced, the protocol sets `sync_failed = true`.
+- **Dry contact:** `sync()` only reads the limit switches and pushes state; the protocol never sets `sync_failed`. If both limits read false at boot (or sensors not ready), door state can stay unknown with no notification.
+
+**Change:** The main component now **verifies** that sync produced a door state. A one-time timeout runs **51 s** after boot (`SYNC_DELAY + SYNC_VERIFY_DELAY`). If `door_state` is still `UNKNOWN`, the component sets `sync_failed = true`. That triggers the same `on_sync_failed` automation (e.g. “Failed to communicate with garage opener on startup”) so the user is notified regardless of protocol.
+
+**File:** `components/ratgdo/ratgdo.cpp`  
+**In:** `RATGDOComponent::setup()`
+
+- **Added:** `SYNC_VERIFY_DELAY = 50000` (50 s). After `sync()` is scheduled, a second timeout `"sync_verify"` is scheduled at `SYNC_DELAY + SYNC_VERIFY_DELAY`. In its callback we check `*this->door_state == DoorState::UNKNOWN` and, if so, set `this->sync_failed = true` and log a warning.
+- **Effect:** If sync never produced a door state (Sec+1 timeout, Sec+2 timeout, or dry contact with no valid limit state), we still mark sync as failed and the user gets the same notification. No silent “stuck unknown” after boot.
+
+---
+
 ## Summary table
 
 | Severity | Issue | Fix | Files touched |
 |----------|--------|-----|----------------|
-| High     | Move-to-position with unknown position could open door | Reject move when `door_position == DOOR_POSITION_UNKNOWN` | `components/ratgdo/ratgdo.cpp` |
+| High     | Move-to-position with unknown position could open door | Reject move when `door_position == DOOR_POSITION_UNKNOWN`; call `query_status()` when rejecting | `components/ratgdo/ratgdo.cpp` |
 | Medium   | Dry contact script could open at boot or due to noise | 10 s boot delay before script can run door actions | `base.yaml`, `base_secplusv1.yaml` |
+| —        | Sync could fail and leave status unknown with no notification (e.g. dry contact) | Post-sync verification: 51 s after boot, if door state still UNKNOWN set `sync_failed` | `components/ratgdo/ratgdo.cpp` |
 
 ---
 
