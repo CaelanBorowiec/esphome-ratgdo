@@ -8,15 +8,15 @@ This document describes the code changes made to address the **High** and **Medi
 
 **Finding:** A client could send “set cover position” (e.g. to 50%) before the device had received any door state. With `door_position` still at `DOOR_POSITION_UNKNOWN` (-1.0), the code computed `delta = position - (-1) > 0` and sent **OPEN**, causing an uncommanded open after boot or reconnect.
 
-**Fix:** Reject `door_move_to_position()` when the current door position is unknown. No open or close command is sent until the device has a known position (from protocol status or limit switches).
+**Fix:** Reject `door_move_to_position()` when the current door position is unknown. No open or close command is sent until the device has a known position (from protocol status or limit switches). When rejecting, the firmware calls `query_status()` so the opener can report state and position can become known without user action where the protocol supports it.
 
 ### Change
 
 **File:** `components/ratgdo/ratgdo.cpp`  
 **Function:** `RATGDOComponent::door_move_to_position(float position)`
 
-- **What was added:** A guard at the start of the function (after handling OPENING/CLOSING) that returns immediately if `*this->door_position == DOOR_POSITION_UNKNOWN`, with a warning log.
-- **Behavior:** Any call to move the cover to a numeric position (e.g. from Home Assistant or the API) is ignored until the firmware has set `door_position` to a known value (0.0–1.0). Once the door state has been reported (OPEN, CLOSED, or STOPPED), `door_position` is set and move-to-position works as before.
+- **What was added:** A guard at the start of the function (after handling OPENING/CLOSING) that returns immediately if `*this->door_position == DOOR_POSITION_UNKNOWN`, logs a warning, calls `this->query_status()`, then returns.
+- **Behavior:** Any call to move the cover to a numeric position (e.g. from Home Assistant or the API) is ignored until the firmware has set `door_position` to a known value (0.0–1.0). When rejected, a status request is sent so that (for protocols that support it) the next response can set position; the user can retry the move or use the **Sync** button if position stays unknown. Once the door state has been reported (OPEN, CLOSED, or STOPPED), `door_position` is set and move-to-position works as before.
 
 ### Code diff (conceptual)
 
@@ -24,10 +24,20 @@ This document describes the code changes made to address the **High** and **Medi
 // Added after the OPENING/CLOSING block, before computing delta:
 
 if (*this->door_position == DOOR_POSITION_UNKNOWN) {
-    ESP_LOGW(TAG, "Door position unknown, ignoring move to position %.2f (query door state first)", position);
+    ESP_LOGW(TAG, "Door position unknown, ignoring move to position %.2f (querying door state)", position);
+    this->query_status(); // request status from opener so position can become known; use Sync button if still unknown
     return;
 }
 ```
+
+### Sync / query_status when position is unknown
+
+- **At boot:** The firmware already calls `sync()` once after a short delay (see `SYNC_DELAY` in `ratgdo.cpp`). That runs the protocol’s sync (e.g. Sec+2 requests status; dry contact reads limit switches), which normally establishes door state and position.
+- **When we reject move-to-position:** We now call `query_status()` so the device asks the opener for current status instead of only refusing the move:
+  - **Security+ 2.0:** `query_status()` sends a single GET_STATUS; the response updates door state and position. Retrying the move after the response usually works.
+  - **Security+ 1.0:** `query_status()` is a no-op at protocol level. If position stays unknown, the user can use the **Sync** button (calls `sync()`) to run the full sync process.
+  - **Dry contact:** State comes from limit switches during `sync()`. If position is still unknown (e.g. very early after boot), the user can use the **Sync** button to re-read the sensors.
+- **Sync button:** In the config (e.g. `base.yaml`) the “Sync” template button calls `id($id_prefix).sync()`. Use it when the door state/position is wrong or unknown.
 
 ### Notes
 

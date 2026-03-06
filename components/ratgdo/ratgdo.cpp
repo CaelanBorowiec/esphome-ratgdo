@@ -706,7 +706,8 @@ namespace ratgdo {
         }
 
         if (*this->door_position == DOOR_POSITION_UNKNOWN) {
-            ESP_LOGW(TAG, "Door position unknown, ignoring move to position %.2f (query door state first)", position);
+            ESP_LOGW(TAG, "Door position unknown, ignoring move to position %.2f (querying door state)", position);
+            this->query_status(); // request status from opener so position can become known; use Sync button if still unknown
             return;
         }
 
