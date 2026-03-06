@@ -1,12 +1,16 @@
 ---
 esphome:
   min_version: 2026.2.0
+  on_boot:
+    - delay: 10s
+    - globals.set:
+        id: ${id_prefix}_dry_contact_ready
+        value: "true"
 
 external_components:
   - source:
-      type: git
-      url: https://github.com/ratgdo/esphome-ratgdo
-      ref: main
+      type: local
+      path: C:\Users\Caelan\Documents\GitHub\esphome-ratgdo\components
     refresh: 1s
   # - source:
   #     type: local
@@ -20,12 +24,6 @@ globals:
     type: bool
     restore_value: false
     initial_value: "false"
-
-on_boot:
-  - delay: 10s
-  - globals.set:
-      id: ${id_prefix}_dry_contact_ready
-      value: "true"
 
 preferences:
   flash_write_interval: 1min

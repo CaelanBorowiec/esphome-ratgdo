@@ -68,10 +68,14 @@ def main():
             and "ratgdo/esphome-ratgdo" in content
         ):
             # Replace the git source with local source, preserving indentation
-            # This matches the exact structure: type: git, url: ..., ref: ...
+            # Use a replacement function to avoid Windows path backslashes (e.g. \U) being interpreted as regex escapes
+            components_path = str(project_root / "components")
+            def replace_external_components(match):
+                indent = match.group(1)
+                return f"type: local\n{indent}path: {components_path}"
             content = re.sub(
                 r"type:\s*git\s*\n(\s+)url:\s*https://github\.com/ratgdo/esphome-ratgdo\s*\n\s+ref:\s*\w+",
-                rf"type: local\n\1path: {project_root}/components",
+                replace_external_components,
                 content,
             )
 
